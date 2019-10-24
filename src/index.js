@@ -1,5 +1,13 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import ReactDOM from 'react-dom';
+import * as config from './../config';
+
+import { initializeApp } from 'firebase';
+
+const app = initializeApp(config.firebase);
+
+const firestore = app.firestore();
+
 const Context = createContext();
 
 const initData = {
@@ -24,16 +32,26 @@ const initData = {
 const DataProvider = ({ children }) => {
   // Dummy data
   const [state, setState] = useState(initData);
+  const [items, setItems] = useState([]);
+  const [isFetching, setIsFetching] = useState(false);
+  const [error, setError] = useState('');
   const [itemToUpdate, setItemToUpdate] = useState(false);
 
-  const create = item => {
-    setState(s => {
-      return {
-        ...s,
-        items: [...s.items, item]
-      };
-    });
+  const create = async item => {
+    //const timestamp = firestore.FieldValue.serverTimestamp;
+    setIsFetching(true);
+    try {
+      const collection = await firestore.collection('/data');
+      const doc = collection.doc();
+      console.log(doc.id);
+
+      await doc.set({ ...item, dateTime: 323423, id: doc.id });
+    } catch (e) {
+      setError(e.message);
+    }
+    setIsFetching(false);
   };
+
   const update = (id, payload) => {
     const index = state.items.indexOf(i => i.id === id);
     const item = state.items[index];
@@ -42,8 +60,18 @@ const DataProvider = ({ children }) => {
       items: [...s.items]
     }));
   };
-  const read = () => {
-    return state.items;
+
+  const read = async () => {
+    try {
+      const snapshot = await firestore.collection('data').get();
+      const data = await snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setItems(data);
+    } catch (e) {
+      setError(e.message);
+    }
   };
 
   const remove = () => {};
@@ -53,12 +81,15 @@ const DataProvider = ({ children }) => {
   return (
     <Context.Provider
       value={{
+        error,
+        items,
         create,
         update,
         read,
         remove,
         itemToUpdate,
-        setItemToUpdate
+        setItemToUpdate,
+        isFetching
       }}
     >
       {children}
@@ -67,8 +98,12 @@ const DataProvider = ({ children }) => {
 };
 
 const List = () => {
-  const { read, setItemToUpdate, itemToUpdate } = useContext(Context);
+  const { read, items, setItemToUpdate, itemToUpdate } = useContext(Context);
   const [show, setShow] = useState();
+
+  useEffect(() => {
+    read();
+  }, []);
 
   const handleShow = id => {
     if (show === id) {
@@ -80,7 +115,7 @@ const List = () => {
 
   return (
     <ul>
-      {read().map(item => {
+      {items.map(item => {
         return (
           <li key={item.id}>
             {item.name} - {item.dateTime}
@@ -104,8 +139,14 @@ const formInitData = {
 const Form = () => {
   // set to false
   const [toggle, setToggle] = useState(false);
-  const { create, update, itemToUpdate, setItemToUpdate } = useContext(Context);
-  console.log(itemToUpdate);
+  const {
+    create,
+    update,
+    isFetching,
+    error,
+    itemToUpdate,
+    setItemToUpdate
+  } = useContext(Context);
 
   const [show, setShow] = useState({
     login: false,
@@ -166,6 +207,8 @@ const Form = () => {
 
   return (
     <>
+      {isFetching && 'Loading...'}
+      {error && error}
       <button type="button" onClick={() => setToggle(t => !t)}>
         {toggle ? 'Close' : 'Add new'}
       </button>
